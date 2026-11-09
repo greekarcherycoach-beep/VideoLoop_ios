@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Archery Lab Final</title>
+    <title>Archery Lab Lab</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
@@ -13,15 +13,15 @@
         }
         #videoContainer {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1;
+            display: flex; justify-content: center; align-items: center;
         }
         video { width: 100%; height: 100%; object-fit: cover; }
         
-        /* Canvas μόνο για τη σχεδίαση γραμμών, εντελώς διάφανο πάνω από το βίντεο */
+        /* Διάφανο Canvas για Draw και Zoom/Pan */
         #drawCanvas {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            z-index: 2; pointer-events: none; /* Αφήνει τα αγγίγματα να περνάνε στο UI αν δεν σχεδιάζουμε */
+            z-index: 2;
         }
-        #drawCanvas.active { pointer-events: auto; } /* Ενεργοποιείται μόνο στο Draw Mode */
 
         #startContainer {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -37,6 +37,7 @@
             z-index: 10; width: 90%; max-width: 400px;
             background: rgba(0,0,0,0.8); padding: 15px; border-radius: 16px;
             backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            display: none;
         }
         .row { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 10px; }
         label { color: #fff; font-size: 14px; font-weight: 600; }
@@ -45,6 +46,11 @@
         .btn-group { display: flex; gap: 8px; width: 100%; }
         button { flex: 1; background: #ff9500; color: #000; border: none; padding: 12px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; }
         button.active { background: #ff3b30; color: #fff; }
+        #zoomBadge {
+            position: absolute; top: 50px; left: 20px; background: rgba(0,0,0,0.7);
+            color: #fff; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: bold;
+            z-index: 5; pointer-events: none; display: none;
+        }
     </style>
 </head>
 <body>
@@ -54,11 +60,11 @@
     </div>
 
     <div id="videoContainer">
-        <!-- Το βίντεο παίζει native με hardware acceleration -->
         <video id="playbackVideo" autoplay playsinline muted webkit-playsinline></video>
     </div>
     
     <canvas id="drawCanvas"></canvas>
+    <div id="zoomBadge">Zoom: 1.0x</div>
     
     <div id="ui-overlay">
         <div class="row">
@@ -85,6 +91,7 @@
         const startContainer = document.getElementById('startContainer');
         const startBtn = document.getElementById('startBtn');
         const uiOverlay = document.getElementById('ui-overlay');
+        const zoomBadge = document.getElementById('zoomBadge');
 
         let stream = null;
         let mediaRecorder = null;
@@ -95,6 +102,11 @@
         let drawingLines = [];
         let currentLine = null;
         let isDrawingMode = false;
+
+        // Μεταβλητές Zoom/Pan
+        let scale = 1.0, offsetX = 0, offsetY = 0;
+        let startX = 0, startY = 0, startScale = 1.0, isPanning = false;
+        let initialPinchDist = 0;
 
         startBtn.addEventListener('click', () => {
             startContainer.style.display = 'none';
@@ -107,55 +119,53 @@
             if (mediaRecorder && mediaRecorder.state !== 'inactive') { mediaRecorder.stop(); }
             
             try {
-                // Ζητάμε standard ανάλυση για να μην κολλάει το iOS
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: { 
-                        facingMode: currentFacingMode,
-                        width: { ideal: 640 },
-                        height: { ideal: 480 }
-                    },
+                    video: { facingMode: currentFacingMode },
                     audio: false
                 });
                 
-                setupDelayBuffers();
+                setupMediaRecorder();
             } catch (err) {
                 alert("Σφάλμα κάμερας: " + err.message);
             }
         }
 
-        function setupDelayBuffers() {
+        function setupMediaRecorder() {
             recordedChunks = [];
             
-            // Το iOS υποστηρίζει mp4/video/mp4 για το MediaRecorder [5]
-            const options = { mimeType: 'video/mp4' };
-            mediaRecorder = new MediaRecorder(stream, options);
+            // 🍏 iOS Fix: Επιλογή του μοναδικού MIME Type που υποστηρίζει το iOS MediaRecorder χωρίς να κρασάρει
+            let options = { mimeType: 'video/mp4;codecs=avc1' };
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                options = { mimeType: 'video/quicktime' };
+            }
             
-            mediaRecorder.ondataavailable = (event) => {
-                if (event.data && event.data.size > 0) {
-                    recordedChunks.push(event.data);
-                    updatePlayback();
-                }
-            };
-            
-            // Καταγραφή σε μικρά chunks των 500ms για ομαλή ροή
-            mediaRecorder.start(500);
-            
-            // Αρχικοποίηση διαστάσεων διάφανου canvas σχεδίασης
-            canvas.width = window.innerWidth * window.devicePixelRatio;
-            canvas.height = window.innerHeight * window.devicePixelRatio;
-            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+            try {
+                mediaRecorder = new MediaRecorder(stream, options);
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data && event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                        updatePlayback();
+                    }
+                };
+                
+                // Εγγραφή ανά 500ms
+                mediaRecorder.start(500);
+                
+                canvas.width = window.innerWidth * window.devicePixelRatio;
+                canvas.height = window.innerHeight * window.devicePixelRatio;
+                redrawCanvas();
+            } catch (e) {
+                alert("MediaRecorder error: " + e.message);
+            }
         }
 
         function updatePlayback() {
-            // Υπολογίζουμε πόσα chunks πρέπει να προσπεράσουμε για να πετύχουμε το delay
-            // Κάθε chunk είναι 0.5 δευτερόλεπτο (500ms)
-            const chunksNeededForDelay = currentDelay * 2;
+            const chunksNeeded = currentDelay * 2; // 2 chunks ανά δευτερόλεπτο
             
-            if (recordedChunks.length > chunksNeededForDelay) {
-                const delayedChunks = recordedChunks.slice(0, recordedChunks.length - chunksNeededForDelay);
-                const blob = new Blob(delayedChunks, { type: 'video/mp4' });
+            if (recordedChunks.length > chunksNeeded) {
+                const delayed = recordedChunks.slice(0, recordedChunks.length - chunksNeeded);
+                const blob = new Blob(delayed, { type: mediaRecorder.mimeType });
                 
-                // Κρατάμε τη θέση αναπαραγωγής αν παίζει ήδη για να μην κάνει φλασάρισμα
                 const currentTime = video.currentTime;
                 const isPaused = video.paused;
                 
@@ -168,7 +178,6 @@
                     }
                 };
             } else {
-                // Στην αρχή δείχνει live το stream μέχρι να μαζευτεί ο χρόνος του delay
                 if (!video.srcObject) {
                     video.srcObject = stream;
                     video.play().catch(() => {});
@@ -179,7 +188,6 @@
         delaySlider.addEventListener('input', (e) => {
             currentDelay = parseInt(e.target.value);
             delayValue.textContent = currentDelay.toFixed(1) + 's';
-            // Καθαρισμός και επανεκκίνηση buffer για άμεση αλλαγή χρόνου
             video.srcObject = null;
             if (mediaRecorder && mediaRecorder.state !== 'inactive') {
                 mediaRecorder.stop();
@@ -190,18 +198,20 @@
         toggleCamBtn.addEventListener('click', () => {
             currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
             if (currentFacingMode === 'user') {
-                video.style.transform = 'scaleX(-1)'; // Καθρεφτισμός selfie κάμερας
+                video.style.transform = 'scaleX(-1)'; // Mirror selfie
             } else {
                 video.style.transform = 'scaleX(1)';
             }
             video.srcObject = null;
+            scale = 1.0; offsetX = 0; offsetY = 0;
+            zoomBadge.style.display = 'none';
+            applyVideoTransform();
             initCamera();
         });
 
         drawModeBtn.addEventListener('click', () => {
             isDrawingMode = !isDrawingMode;
             drawModeBtn.classList.toggle('active', isDrawingMode);
-            canvas.classList.toggle('active', isDrawingMode);
         });
 
         clearDrawBtn.addEventListener('click', () => {
@@ -209,34 +219,65 @@
             redrawCanvas();
         });
 
-        // Ασφαλής σχεδίαση γραμμών στο διάφανο canvas
+        // 🔥 Ενοποιημένο Touch Handling για Zoom, Pan και Draw πάνω στο Canvas
         canvas.addEventListener('touchstart', (e) => {
-            if (!isDrawingMode) return;
-            const touch = e.touches[0];
             const rect = canvas.getBoundingClientRect();
-            currentLine = [{
-                x: touch.clientX - rect.left,
-                y: touch.clientY - rect.top
-            }];
-            drawingLines.push(currentLine);
-        });
-
-        canvas.addEventListener('touchmove', (e) => {
-            if (!isDrawingMode || !currentLine) return;
-            const touch = e.touches[0];
-            const rect = canvas.getBoundingClientRect();
-            currentLine.push({
-                x: touch.clientX - rect.left,
-                y: touch.clientY - rect.top
-            });
-            redrawCanvas();
-        });
-
-        canvas.addEventListener('touchend', () => { currentLine = null; });
-
-        function redrawCanvas() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-ctx.lineWidth = 4;
+            if (isDrawingMode) {
+                const touch = e.touches[0];
+                currentLine = [{
+                    x: (touch.clientX - rect.left) * window.devicePixelRatio,
+                    y: (touch.clientY - rect.top) * window.devicePixelRatio
+                }];
+                drawingLines.push(currentLine);
+            } else {
+                if (e.touches.length === 1) {
+                    isPanning = true;
+                    startX = e.touches[0].clientX - offsetX;
+                    startY = e.touches[0].clientY - offsetY;
+                } else if (e.touches.length === 2) {
+                    isPanning = false;
+                    startScale = scale;
+                    initialPinchDist = Math.hypot(
+e.touches[0].clientX - e.touches[1].clientX,
+e.touches[0].clientY - e.touches[1].clientY
+);
+}
+}
+});
+canvas.addEventListener('touchmove', (e) => {
+const rect = canvas.getBoundingClientRect();
+if (isDrawingMode && currentLine) {
+const touch = e.touches[0];
+currentLine.push({
+x: (touch.clientX - rect.left) * window.devicePixelRatio,
+y: (touch.clientY - rect.top) * window.devicePixelRatio
+});
+redrawCanvas();
+} else {
+if (isPanning && e.touches.length === 1) {
+offsetX = e.touches[0].clientX - startX;
+offsetY = e.touches[0].clientY - startY;
+applyVideoTransform();
+} else if (e.touches.length === 2) {
+const dist = Math.hypot(
+e.touches[0].clientX - e.touches[1].clientX,
+e.touches[0].clientY - e.touches[1].clientY
+);
+scale = Math.max(1.0, Math.min(5.0, startScale * (dist / initialPinchDist)));
+zoomBadge.style.display = scale > 1.0 ? 'block' : 'none';
+zoomBadge.textContent = Zoom: ${scale.toFixed(1)}x;
+applyVideoTransform();
+}
+}
+});
+canvas.addEventListener('touchend', () => { isPanning = false; currentLine = null; });
+function applyVideoTransform() {
+let mirror = currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
+video.style.transform = translate(${offsetX}px, ${offsetY}px) scale(${scale}) ${mirror};
+}
+function redrawCanvas() {
+ctx.clearRect(0, 0, canvas.width, canvas.height);
+ctx.lineWidth = 6;
 ctx.strokeStyle = '#ff3b30';
 ctx.lineCap = 'round';
 ctx.lineJoin = 'round';
@@ -253,6 +294,5 @@ ctx.stroke();
 window.addEventListener('resize', () => {
 canvas.width = window.innerWidth * window.devicePixelRatio;
 canvas.height = window.innerHeight * window.devicePixelRatio;
-ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
 redrawCanvas();
 });
