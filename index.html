@@ -9,7 +9,6 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="ArcheryDelay">
-    <link rel="apple-touch-icon" href="icon-192.png">
 
     <style>
         body, html {
@@ -58,7 +57,7 @@
 <body>
 
     <div id="startContainer">
-        <button id="startBtn">📷 ΕΝΑΡΞΗ ΚΑΜΕΡΑΣ</button>
+        <button id="startBtn">📷 ΕΝΑΡΞΗ KAMEΡΑΣ</button>
     </div>
 
     <div id="canvasContainer">
@@ -82,7 +81,6 @@
     </div>
 
     <script>
-        // Απλοποιημένο registration χωρίς παραμέτρους cache που μπερδεύουν το iOS PWA
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js').catch(err => console.log(err));
         }
@@ -118,19 +116,22 @@
         let stream = null;
         let animationFrameId = null;
 
-        // Ενοποιημένος handler εκκίνησης
+        // 🍏 iOS standalone mode fix: Ακούμε και για click και για touchend με stopPropagation
         function handleStart(e) {
-            if(e) e.preventDefault();
+            if(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
             startContainer.style.display = 'none';
             initCamera();
         }
 
+        startBtn.addEventListener('touchend', handleStart);
         startBtn.addEventListener('click', handleStart);
 
         async function initCamera() {
             if (stream) { stream.getTracks().forEach(track => track.stop()); }
             try {
-                // native clean request
                 stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: currentFacingMode },
                     audio: false
@@ -169,7 +170,6 @@
 
         clearDrawBtn.addEventListener('click', () => { drawingLines = []; });
 
-        // Touch Gestures
         canvas.addEventListener('touchstart', (e) => {
             const rect = canvas.getBoundingClientRect();
             if (isDrawingMode) {
@@ -252,7 +252,7 @@ tempCanvas.getContext('2d').putImageData(delayedFrame, 0, 0);
 ctx.drawImage(tempCanvas, -dw / 2, -dh / 2, dw, dh);
 ctx.restore();
 }
-// Διορθωμένο και σταθερό loop σχεδίασης γραμμών
+// 🌟 100% Διορθωμένο loop σχεδίασης (line[0].x αντί για line.x)
 ctx.lineWidth = 6; ctx.strokeStyle = '#ff3b30'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
 for (let i = 0; i < drawingLines.length; i++) {
 const line = drawingLines[i];
