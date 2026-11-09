@@ -2,41 +2,257 @@
 <html lang="el">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Archery Simple Test</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Archery Lab Final</title>
     <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000; overflow: hidden; }
-        video { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 1; }
-        #btnContainer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #111; display: flex; justify-content: center; align-items: center; z-index: 999; }
-        #clickBtn { background: #ff9500; color: #000; padding: 25px 50px; font-size: 22px; font-weight: bold; border-radius: 16px; border: none; }
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background-color: #000; overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            user-select: none; -webkit-user-select: none;
+        }
+        #videoContainer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1;
+        }
+        video { width: 100%; height: 100%; object-fit: cover; }
+        
+        /* Canvas μόνο για τη σχεδίαση γραμμών, εντελώς διάφανο πάνω από το βίντεο */
+        #drawCanvas {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 2; pointer-events: none; /* Αφήνει τα αγγίγματα να περνάνε στο UI αν δεν σχεδιάζουμε */
+        }
+        #drawCanvas.active { pointer-events: auto; } /* Ενεργοποιείται μόνο στο Draw Mode */
+
+        #startContainer {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #111; display: flex; justify-content: center; align-items: center; z-index: 9999;
+        }
+        #startBtn {
+            background: #ff9500; color: #000; padding: 20px 40px;
+            font-size: 20px; font-weight: bold; border-radius: 12px; border: none; cursor: pointer;
+        }
+        #ui-overlay {
+            position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+            display: flex; flex-direction: column; align-items: center; gap: 12px;
+            z-index: 10; width: 90%; max-width: 400px;
+            background: rgba(0,0,0,0.8); padding: 15px; border-radius: 16px;
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        }
+        .row { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 10px; }
+        label { color: #fff; font-size: 14px; font-weight: 600; }
+        input[type="range"] { flex-grow: 1; accent-color: #ff3b30; height: 30px; }
+        #delayValue { color: #ff9500; font-weight: bold; min-width: 45px; text-align: right; }
+        .btn-group { display: flex; gap: 8px; width: 100%; }
+        button { flex: 1; background: #ff9500; color: #000; border: none; padding: 12px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; }
+        button.active { background: #ff3b30; color: #fff; }
     </style>
 </head>
 <body>
 
-    <div id="btnContainer">
-        <button id="clickBtn">📷 ΑΝΟΙΓΜΑ ΚΑΜΕΡΑΣ</button>
+    <div id="startContainer">
+        <button id="startBtn">📷 ΕΝΑΡΞΗ ΚΑΜΕΡΑΣ</button>
     </div>
 
-    <video id="myVideo" autoplay playsinline muted webkit-playsinline></video>
+    <div id="videoContainer">
+        <!-- Το βίντεο παίζει native με hardware acceleration -->
+        <video id="playbackVideo" autoplay playsinline muted webkit-playsinline></video>
+    </div>
+    
+    <canvas id="drawCanvas"></canvas>
+    
+    <div id="ui-overlay">
+        <div class="row">
+            <label>⏱ Καθυστέρηση:</label>
+            <input type="range" id="delaySlider" min="1" max="8" step="1" value="3">
+            <span id="delayValue">3.0s</span>
+        </div>
+        <div class="btn-group">
+            <button id="toggleCamBtn">🔄 Κάμερα</button>
+            <button id="drawModeBtn">✏️ Σχεδίαση</button>
+            <button id="clearDrawBtn">🗑️ Σβήσιμο</button>
+        </div>
+    </div>
 
     <script>
-        const video = document.getElementById('myVideo');
-        const btnContainer = document.getElementById('btnContainer');
-        const clickBtn = document.getElementById('clickBtn');
+        const video = document.getElementById('playbackVideo');
+        const canvas = document.getElementById('drawCanvas');
+        const ctx = canvas.getContext('2d');
+        const delaySlider = document.getElementById('delaySlider');
+        const delayValue = document.getElementById('delayValue');
+        const toggleCamBtn = document.getElementById('toggleCamBtn');
+        const drawModeBtn = document.getElementById('drawModeBtn');
+        const clearDrawBtn = document.getElementById('clearDrawBtn');
+        const startContainer = document.getElementById('startContainer');
+        const startBtn = document.getElementById('startBtn');
+        const uiOverlay = document.getElementById('ui-overlay');
 
-        clickBtn.addEventListener('click', async () => {
-            btnContainer.style.display = 'none';
+        let stream = null;
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let currentFacingMode = 'environment';
+        let currentDelay = 3;
+        
+        let drawingLines = [];
+        let currentLine = null;
+        let isDrawingMode = false;
+
+        startBtn.addEventListener('click', () => {
+            startContainer.style.display = 'none';
+            uiOverlay.style.display = 'flex';
+            initCamera();
+        });
+
+        async function initCamera() {
+            if (stream) { stream.getTracks().forEach(track => track.stop()); }
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') { mediaRecorder.stop(); }
+            
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment" },
+                // Ζητάμε standard ανάλυση για να μην κολλάει το iOS
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { 
+                        facingMode: currentFacingMode,
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    },
                     audio: false
                 });
-                video.srcObject = stream;
-                await video.play();
+                
+                setupDelayBuffers();
             } catch (err) {
-                alert("iOS Error Details: " + err.name + " - " + err.message);
+                alert("Σφάλμα κάμερας: " + err.message);
+            }
+        }
+
+        function setupDelayBuffers() {
+            recordedChunks = [];
+            
+            // Το iOS υποστηρίζει mp4/video/mp4 για το MediaRecorder [5]
+            const options = { mimeType: 'video/mp4' };
+            mediaRecorder = new MediaRecorder(stream, options);
+            
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data && event.data.size > 0) {
+                    recordedChunks.push(event.data);
+                    updatePlayback();
+                }
+            };
+            
+            // Καταγραφή σε μικρά chunks των 500ms για ομαλή ροή
+            mediaRecorder.start(500);
+            
+            // Αρχικοποίηση διαστάσεων διάφανου canvas σχεδίασης
+            canvas.width = window.innerWidth * window.devicePixelRatio;
+            canvas.height = window.innerHeight * window.devicePixelRatio;
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        }
+
+        function updatePlayback() {
+            // Υπολογίζουμε πόσα chunks πρέπει να προσπεράσουμε για να πετύχουμε το delay
+            // Κάθε chunk είναι 0.5 δευτερόλεπτο (500ms)
+            const chunksNeededForDelay = currentDelay * 2;
+            
+            if (recordedChunks.length > chunksNeededForDelay) {
+                const delayedChunks = recordedChunks.slice(0, recordedChunks.length - chunksNeededForDelay);
+                const blob = new Blob(delayedChunks, { type: 'video/mp4' });
+                
+                // Κρατάμε τη θέση αναπαραγωγής αν παίζει ήδη για να μην κάνει φλασάρισμα
+                const currentTime = video.currentTime;
+                const isPaused = video.paused;
+                
+                video.src = URL.createObjectURL(blob);
+                
+                video.onloadedmetadata = () => {
+                    if (!isPaused) {
+                        video.currentTime = currentTime;
+                        video.play().catch(() => {});
+                    }
+                };
+            } else {
+                // Στην αρχή δείχνει live το stream μέχρι να μαζευτεί ο χρόνος του delay
+                if (!video.srcObject) {
+                    video.srcObject = stream;
+                    video.play().catch(() => {});
+                }
+            }
+        }
+
+        delaySlider.addEventListener('input', (e) => {
+            currentDelay = parseInt(e.target.value);
+            delayValue.textContent = currentDelay.toFixed(1) + 's';
+            // Καθαρισμός και επανεκκίνηση buffer για άμεση αλλαγή χρόνου
+            video.srcObject = null;
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                mediaRecorder.start(500);
             }
         });
-    </script>
-</body>
-</html>
+
+        toggleCamBtn.addEventListener('click', () => {
+            currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+            if (currentFacingMode === 'user') {
+                video.style.transform = 'scaleX(-1)'; // Καθρεφτισμός selfie κάμερας
+            } else {
+                video.style.transform = 'scaleX(1)';
+            }
+            video.srcObject = null;
+            initCamera();
+        });
+
+        drawModeBtn.addEventListener('click', () => {
+            isDrawingMode = !isDrawingMode;
+            drawModeBtn.classList.toggle('active', isDrawingMode);
+            canvas.classList.toggle('active', isDrawingMode);
+        });
+
+        clearDrawBtn.addEventListener('click', () => {
+            drawingLines = [];
+            redrawCanvas();
+        });
+
+        // Ασφαλής σχεδίαση γραμμών στο διάφανο canvas
+        canvas.addEventListener('touchstart', (e) => {
+            if (!isDrawingMode) return;
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            currentLine = [{
+                x: touch.clientX - rect.left,
+                y: touch.clientY - rect.top
+            }];
+            drawingLines.push(currentLine);
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (!isDrawingMode || !currentLine) return;
+            const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
+            currentLine.push({
+                x: touch.clientX - rect.left,
+                y: touch.clientY - rect.top
+            });
+            redrawCanvas();
+        });
+
+        canvas.addEventListener('touchend', () => { currentLine = null; });
+
+        function redrawCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+ctx.lineWidth = 4;
+ctx.strokeStyle = '#ff3b30';
+ctx.lineCap = 'round';
+ctx.lineJoin = 'round';
+for (let line of drawingLines) {
+if (line.length < 2) continue;
+ctx.beginPath();
+ctx.moveTo(line[0].x, line[0].y);
+for (let i = 1; i < line.length; i++) {
+ctx.lineTo(line[i].x, line[i].y);
+}
+ctx.stroke();
+}
+}
+window.addEventListener('resize', () => {
+canvas.width = window.innerWidth * window.devicePixelRatio;
+canvas.height = window.innerHeight * window.devicePixelRatio;
+ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+redrawCanvas();
+});
