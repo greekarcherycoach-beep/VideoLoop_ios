@@ -4,6 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Archery Delay</title>
+    
+    <!-- 🍏 Σύνδεση με το Manifest και Apple Web App Tags για Fullscreen PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ArcheryDelay">
+    <link rel="apple-touch-icon" href="icon-192.png">
+
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
@@ -60,6 +68,18 @@
     </div>
 
     <script>
+        // 🔄 Δημιουργία ενός inline "Safe-Mode" Service Worker για να μην κρασάρει η κάμερα στο iOS Fullscreen sandbox
+        if ('serviceWorker' in navigator) {
+            const swCode = `
+                self.addEventListener('fetch', (e) => {
+                    e.respondWith(fetch(e.request));
+                });
+            `;
+            const blob = new Blob([swCode], { type: 'application/javascript' });
+            const swUrl = URL.createObjectURL(blob);
+            navigator.serviceWorker.register(swUrl).catch(err => console.log(err));
+        }
+
         const video = document.getElementById('liveVideo');
         const canvas = document.getElementById('mainCanvas');
         const ctx = canvas.getContext('2d');
@@ -77,8 +97,22 @@
         let lastTime = performance.now();
         let stream = null;
 
-        startBtn.addEventListener('click', async () => {
+        // 🍏 iOS Bypass: Χρήση touchend για άμεσο ξεκλείδωμα του hardware στην αρχική οθόνη
+        startBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
             startContainer.style.display = 'none';
+            initCamera();
+        });
+
+        startBtn.addEventListener('click', () => {
+            if(startContainer.style.display !== 'none') {
+                startContainer.style.display = 'none';
+                initCamera();
+            }
+        });
+
+        async function initCamera() {
+            if (stream) { stream.getTracks().forEach(track => track.stop()); }
             
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
@@ -89,7 +123,6 @@
                 video.srcObject = stream;
                 await video.play();
                 
-                // Αρχικοποίηση διαστάσεων canvas
                 canvas.width = window.innerWidth * window.devicePixelRatio;
                 canvas.height = window.innerHeight * window.devicePixelRatio;
                 bufferCanvas.width = video.videoWidth || 640;
@@ -97,9 +130,9 @@
                 
                 requestAnimationFrame(animationLoop);
             } catch (err) {
-                alert("Σφάλμα: " + err.message);
+                alert("Σφάλμα κάμερας: " + err.message);
             }
-        });
+        }
 
         delaySlider.addEventListener('input', (e) => {
             currentDelay = parseFloat(e.target.value);
@@ -111,7 +144,6 @@
             lastTime = now;
             if (delta > 0) fps = (fps * 0.9) + ((1000 / delta) * 0.1);
 
-            // Αποθήκευση του live frame στον buffer
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
                 if (bufferCanvas.width !== video.videoWidth || bufferCanvas.height !== video.videoHeight) {
                     bufferCanvas.width = video.videoWidth;
@@ -125,14 +157,12 @@
             const requiredBufferLength = Math.max(1, Math.round(currentDelay * fps));
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            // Εμφάνιση του frame με καθυστέρηση
             if (frameBuffer.length >= requiredBufferLength) {
                 const delayedFrame = frameBuffer.shift();
                 
                 ctx.save();
                 ctx.translate(canvas.width / 2, canvas.height / 2);
                 
-                // Υπολογισμός Aspect Fill για Fullscreen σε Portrait
                 const scaleFactor = Math.max(canvas.width / bufferCanvas.width, canvas.height / bufferCanvas.height);
                 const dw = bufferCanvas.width * scaleFactor;
                 const dh = bufferCanvas.height * scaleFactor;
@@ -148,7 +178,6 @@
             requestAnimationFrame(animationLoop);
         }
 
-        // Διόρθωση μεγέθους σε στροφή οθόνης
         window.addEventListener('resize', () => {
             canvas.width = window.innerWidth * window.devicePixelRatio;
             canvas.height = window.innerHeight * window.devicePixelRatio;
