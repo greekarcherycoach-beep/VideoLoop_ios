@@ -231,3 +231,26 @@
                 const cw = canvas.width, ch = canvas.height;
                 const iw = bufferCanvas.width, ih = bufferCanvas.height;
                 const scaleFactor = Math.max(cw / iw, ch / ih);
+                const dw = iw * scaleFactor, dh = ih * scaleFactor;
+const tempCanvas = document.createElement('canvas');
+tempCanvas.width = iw; tempCanvas.height = ih;
+tempCanvas.getContext('2d').putImageData(delayedFrame, 0, 0);
+ctx.drawImage(tempCanvas, -dw / 2, -dh / 2, dw, dh);
+ctx.restore();
+}
+ctx.lineWidth = 6;
+ctx.strokeStyle = '#ff3b30';
+ctx.lineCap = 'round';
+ctx.lineJoin = 'round';
+for (let line of drawingLines) {
+if (line.length < 2) continue;
+ctx.beginPath();
+ctx.moveTo(line[0].x, line[0].y);
+for (let i = 1; i < line.length; i++) {
+ctx.lineTo(line[i].x, line[i].y);
+}
+ctx.stroke();
+}
+requestAnimationFrame(animationLoop);
+}
+initCamera();
