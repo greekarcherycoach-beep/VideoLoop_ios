@@ -26,22 +26,29 @@
             font-size: 20px; font-weight: bold; border-radius: 12px; border: none;
             cursor: pointer;
         }
+        
+        /* Διορθωμένο overlay: Αυξήσαμε το μέγεθος (max-height) και το padding */
         #ui-overlay {
             position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
-            display: flex; flex-direction: column; align-items: center; gap: 12px;
+            display: flex; flex-direction: column; align-items: center; gap: 16px;
             z-index: 10; width: 90%; max-width: 400px;
-            background: rgba(0,0,0,0.8); padding: 15px; border-radius: 16px;
+            background: rgba(0,0,0,0.85); padding: 20px; border-radius: 16px;
             backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
         }
         .row { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 10px; }
         label { color: #fff; font-size: 14px; font-weight: 600; }
         input[type="range"] { flex-grow: 1; accent-color: #ff3b30; height: 30px; }
         #delayValue { color: #ff9500; font-weight: bold; min-width: 45px; text-align: right; }
         
-        /* Μικρή προσθήκη CSS για το κουμπί της κάμερας */
+        /* Καθαρό και ευδιάκριτο στυλ για το κουμπί εναλλαγής */
         #toggleCamBtn {
             width: 100%; background: #ff9500; color: #000; border: none; 
-            padding: 10px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer;
+            padding: 12px; font-size: 15px; font-weight: bold; border-radius: 8px; 
+            cursor: pointer; display: block;
+        }
+        #toggleCamBtn:active {
+            background: #e08400;
         }
     </style>
 </head>
@@ -63,7 +70,7 @@
             <input type="range" id="delaySlider" min="0.5" max="10" step="0.5" value="3">
             <span id="delayValue">3.0s</span>
         </div>
-        <!-- 🔄 Προσθήκη του κουμπιού στο UI -->
+        <!-- Το κουμπί τοποθετήθηκε ξεκάθαρα εδώ -->
         <button id="toggleCamBtn">🔄 ΕΝΑΛΛΑΓΗ ΚΑΜΕΡΑΣ</button>
     </div>
 
@@ -75,7 +82,7 @@
         const delayValue = document.getElementById('delayValue');
         const startContainer = document.getElementById('startContainer');
         const startBtn = document.getElementById('startBtn');
-        const toggleCamBtn = document.getElementById('toggleCamBtn'); // 🔄 Νέο element
+        const toggleCamBtn = document.getElementById('toggleCamBtn');
 
         const bufferCanvas = document.createElement('canvas');
         const bufferCtx = bufferCanvas.getContext('2d');
@@ -85,14 +92,13 @@
         let fps = 30;
         let lastTime = performance.now();
         let stream = null;
-        let currentFacingMode = 'environment'; // 🔄 Μεταβλητή για την κάμερα
+        let currentFacingMode = 'environment';
 
-        // 🔄 Νέα καθαρή συνάρτηση για άνοιγμα κάμερας
         async function initCamera() {
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
             }
-            frameBuffer = []; // Καθαρίζουμε τον παλιό buffer για να μην μπερδευτούν οι κάμερες
+            frameBuffer = [];
             
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
@@ -115,10 +121,9 @@
         startBtn.addEventListener('click', async () => {
             startContainer.style.display = 'none';
             await initCamera();
-            requestAnimationFrame(animationLoop); // Το loop ξεκινάει ΜΟΝΟ μια φορά στην αρχή
+            requestAnimationFrame(animationLoop);
         });
 
-        // 🔄 Λειτουργία του κουμπιού εναλλαγής
         toggleCamBtn.addEventListener('click', async () => {
             currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
             await initCamera();
@@ -153,7 +158,6 @@
                 ctx.save();
                 ctx.translate(canvas.width / 2, canvas.height / 2);
                 
-                // 🔄 Καθρεφτισμός ΜΟΝΟ αν είναι ενεργή η μπροστινή κάμερα (user)
                 if (currentFacingMode === 'user') {
                     ctx.scale(-1, 1);
                 }
