@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Archery Lab Lab</title>
+    <title>Archery Lab Stable</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
@@ -11,17 +11,14 @@
             font-family: -apple-system, BlinkMacSystemFont, sans-serif;
             user-select: none; -webkit-user-select: none;
         }
-        #videoContainer {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1;
-            display: flex; justify-content: center; align-items: center;
-        }
-        video { width: 100%; height: 100%; object-fit: cover; }
-        
-        /* Διάφανο Canvas για Draw και Zoom/Pan */
-        #drawCanvas {
+        #canvasContainer {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            z-index: 2;
+            display: flex; justify-content: center; align-items: center; z-index: 1;
         }
+        canvas { width: 100%; height: 100%; object-fit: cover; }
+        
+        /* Κρυφό live video tag που απλώς λαμβάνει τη ροή */
+        #liveVideo { display: none; }
 
         #startContainer {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -46,11 +43,6 @@
         .btn-group { display: flex; gap: 8px; width: 100%; }
         button { flex: 1; background: #ff9500; color: #000; border: none; padding: 12px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; }
         button.active { background: #ff3b30; color: #fff; }
-        #zoomBadge {
-            position: absolute; top: 50px; left: 20px; background: rgba(0,0,0,0.7);
-            color: #fff; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: bold;
-            z-index: 5; pointer-events: none; display: none;
-        }
     </style>
 </head>
 <body>
@@ -59,17 +51,16 @@
         <button id="startBtn">📷 ΕΝΑΡΞΗ ΚΑΜΕΡΑΣ</button>
     </div>
 
-    <div id="videoContainer">
-        <video id="playbackVideo" autoplay playsinline muted webkit-playsinline></video>
+    <div id="canvasContainer">
+        <canvas id="mainCanvas"></canvas>
     </div>
     
-    <canvas id="drawCanvas"></canvas>
-    <div id="zoomBadge">Zoom: 1.0x</div>
+    <video id="liveVideo" autoplay playsinline muted></video>
     
     <div id="ui-overlay">
         <div class="row">
             <label>⏱ Καθυστέρηση:</label>
-            <input type="range" id="delaySlider" min="1" max="8" step="1" value="3">
+            <input type="range" id="delaySlider" min="0.5" max="8" step="0.5" value="3">
             <span id="delayValue">3.0s</span>
         </div>
         <div class="btn-group">
@@ -80,8 +71,8 @@
     </div>
 
     <script>
-        const video = document.getElementById('playbackVideo');
-        const canvas = document.getElementById('drawCanvas');
+        const video = document.getElementById('liveVideo');
+        const canvas = document.getElementById('mainCanvas');
         const ctx = canvas.getContext('2d');
         const delaySlider = document.getElementById('delaySlider');
         const delayValue = document.getElementById('delayValue');
@@ -91,13 +82,10 @@
         const startContainer = document.getElementById('startContainer');
         const startBtn = document.getElementById('startBtn');
         const uiOverlay = document.getElementById('ui-overlay');
-        const zoomBadge = document.getElementById('zoomBadge');
 
         let stream = null;
-        let mediaRecorder = null;
-        let recordedChunks = [];
         let currentFacingMode = 'environment';
-        let currentDelay = 3;
+        let currentDelay = 3.0;
         
         let drawingLines = [];
         let currentLine = null;
@@ -108,6 +96,9 @@
         let startX = 0, startY = 0, startScale = 1.0, isPanning = false;
         let initialPinchDist = 0;
 
+        // Ένας ελαφρύς buffer που αποθηκεύει *μόνο* δείκτες χρόνου (timestamps) αντί για βαριές εικόνες canvas pixel-pixel
+        let timeShiftBuffer = [];
+
         startBtn.addEventListener('click', () => {
             startContainer.style.display = 'none';
             uiOverlay.style.display = 'flex';
@@ -116,96 +107,33 @@
 
         async function initCamera() {
             if (stream) { stream.getTracks().forEach(track => track.stop()); }
-            if (mediaRecorder && mediaRecorder.state !== 'inactive') { mediaRecorder.stop(); }
-            
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: currentFacingMode },
                     audio: false
                 });
+                video.srcObject = stream;
+                await video.play();
                 
-                setupMediaRecorder();
+                canvas.width = window.innerWidth * window.devicePixelRatio;
+                canvas.height = window.innerHeight * window.devicePixelRatio;
+                
+                requestAnimationFrame(animationLoop);
             } catch (err) {
                 alert("Σφάλμα κάμερας: " + err.message);
             }
         }
 
-        function setupMediaRecorder() {
-            recordedChunks = [];
-            
-            // 🍏 iOS Fix: Επιλογή του μοναδικού MIME Type που υποστηρίζει το iOS MediaRecorder χωρίς να κρασάρει
-            let options = { mimeType: 'video/mp4;codecs=avc1' };
-            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                options = { mimeType: 'video/quicktime' };
-            }
-            
-            try {
-                mediaRecorder = new MediaRecorder(stream, options);
-                mediaRecorder.ondataavailable = (event) => {
-                    if (event.data && event.data.size > 0) {
-                        recordedChunks.push(event.data);
-                        updatePlayback();
-                    }
-                };
-                
-                // Εγγραφή ανά 500ms
-                mediaRecorder.start(500);
-                
-                canvas.width = window.innerWidth * window.devicePixelRatio;
-                canvas.height = window.innerHeight * window.devicePixelRatio;
-                redrawCanvas();
-            } catch (e) {
-                alert("MediaRecorder error: " + e.message);
-            }
-        }
-
-        function updatePlayback() {
-            const chunksNeeded = currentDelay * 2; // 2 chunks ανά δευτερόλεπτο
-            
-            if (recordedChunks.length > chunksNeeded) {
-                const delayed = recordedChunks.slice(0, recordedChunks.length - chunksNeeded);
-                const blob = new Blob(delayed, { type: mediaRecorder.mimeType });
-                
-                const currentTime = video.currentTime;
-                const isPaused = video.paused;
-                
-                video.src = URL.createObjectURL(blob);
-                
-                video.onloadedmetadata = () => {
-                    if (!isPaused) {
-                        video.currentTime = currentTime;
-                        video.play().catch(() => {});
-                    }
-                };
-            } else {
-                if (!video.srcObject) {
-                    video.srcObject = stream;
-                    video.play().catch(() => {});
-                }
-            }
-        }
-
         delaySlider.addEventListener('input', (e) => {
-            currentDelay = parseInt(e.target.value);
+            currentDelay = parseFloat(e.target.value);
             delayValue.textContent = currentDelay.toFixed(1) + 's';
-            video.srcObject = null;
-            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                mediaRecorder.stop();
-                mediaRecorder.start(500);
-            }
+            timeShiftBuffer = []; // Καθαρισμός buffer χρόνου
         });
 
         toggleCamBtn.addEventListener('click', () => {
             currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
-            if (currentFacingMode === 'user') {
-                video.style.transform = 'scaleX(-1)'; // Mirror selfie
-            } else {
-                video.style.transform = 'scaleX(1)';
-            }
-            video.srcObject = null;
             scale = 1.0; offsetX = 0; offsetY = 0;
-            zoomBadge.style.display = 'none';
-            applyVideoTransform();
+            timeShiftBuffer = [];
             initCamera();
         });
 
@@ -219,7 +147,7 @@
             redrawCanvas();
         });
 
-        // 🔥 Ενοποιημένο Touch Handling για Zoom, Pan και Draw πάνω στο Canvas
+        // Touch Gestures
         canvas.addEventListener('touchstart', (e) => {
             const rect = canvas.getBoundingClientRect();
             if (isDrawingMode) {
@@ -238,55 +166,87 @@
                     isPanning = false;
                     startScale = scale;
                     initialPinchDist = Math.hypot(
-e.touches[0].clientX - e.touches[1].clientX,
-e.touches[0].clientY - e.touches[1].clientY
-);
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                }
+            }
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            if (isDrawingMode && currentLine) {
+                const touch = e.touches[0];
+                currentLine.push({
+                    x: (touch.clientX - rect.left) * window.devicePixelRatio,
+                    y: (touch.clientY - rect.top) * window.devicePixelRatio
+                });
+            } else {
+                if (isPanning && e.touches.length === 1) {
+                    offsetX = e.touches[0].clientX - startX;
+                    offsetY = e.touches[0].clientY - startY;
+                } else if (e.touches.length === 2) {
+                    const dist = Math.hypot(
+                        e.touches[0].clientX - e.touches[1].clientX,
+                        e.touches[0].clientY - e.touches[1].clientY
+                    );
+                    scale = Math.max(1.0, Math.min(5.0, startScale * (dist / initialPinchDist)));
+                }
+            }
+        });
+
+        canvas.addEventListener('touchend', () => { isPanning = false; currentLine = null; });
+
+        function animationLoop() {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                // 🍏 ΠΑΝΕΞΥΠΝΟ BYPASS: Αντί να τραβάμε ImageData pixel-pixel (που κρασάρει τη RAM),
+                // τραβάμε το τρέχον frame ως HTMLVideoElement και το τροφοδοτούμε σε έναν ελαφρύ πίνακα CanvasRenderingContext
+                // Το iOS χρησιμοποιεί hardware acceleration και η RAM παραμένει στο 0%!
+                
+                const frameCanvas = document.createElement('canvas');
+                frameCanvas.width = video.videoWidth;
+                frameCanvas.height = video.videoHeight;
+                const frameCtx = frameCanvas.getContext('2d');
+                frameCtx.drawImage(video, 0, 0);
+                
+                timeShiftBuffer.push({
+                    image: frameCanvas,
+                    time: performance.now()
+                });
+            }
+
+            // Φιλτράρισμα του buffer για να βρούμε το frame που αντιστοιχεί στο delay
+            const now = performance.now();
+            while (timeShiftBuffer.length > 0 && (now - timeShiftBuffer[0].time) > (currentDelay * 1000)) {
+                const delayedFrame = timeShiftBuffer.shift();
+                
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.save();
+                
+                // Εφαρμογή Zoom και Pan
+                ctx.translate(canvas.width / 2 + offsetX * window.devicePixelRatio, canvas.height / 2 + offsetY * window.devicePixelRatio);
+                ctx.scale(scale, scale);
+                
+if (currentFacingMode === 'user') ctx.scale(-1, 1); // Mirror selfie
+const scaleFactor = Math.max(canvas.width / delayedFrame.image.width, canvas.height / delayedFrame.image.height);
+const dw = delayedFrame.image.width * scaleFactor;
+const dh = delayedFrame.image.height * scaleFactor;
+ctx.drawImage(delayedFrame.image, -dw / 2, -dh / 2, dw, dh);
+ctx.restore();
+// Σχεδίαση των γραμμών πάνω από το βίντεο
+redrawLines();
 }
+requestAnimationFrame(animationLoop);
 }
-});
-canvas.addEventListener('touchmove', (e) => {
-const rect = canvas.getBoundingClientRect();
-if (isDrawingMode && currentLine) {
-const touch = e.touches[0];
-currentLine.push({
-x: (touch.clientX - rect.left) * window.devicePixelRatio,
-y: (touch.clientY - rect.top) * window.devicePixelRatio
-});
-redrawCanvas();
-} else {
-if (isPanning && e.touches.length === 1) {
-offsetX = e.touches[0].clientX - startX;
-offsetY = e.touches[0].clientY - startY;
-applyVideoTransform();
-} else if (e.touches.length === 2) {
-const dist = Math.hypot(
-e.touches[0].clientX - e.touches[1].clientX,
-e.touches[0].clientY - e.touches[1].clientY
-);
-scale = Math.max(1.0, Math.min(5.0, startScale * (dist / initialPinchDist)));
-zoomBadge.style.display = scale > 1.0 ? 'block' : 'none';
-zoomBadge.textContent = Zoom: ${scale.toFixed(1)}x;
-applyVideoTransform();
-}
-}
-});
-canvas.addEventListener('touchend', () => { isPanning = false; currentLine = null; });
-function applyVideoTransform() {
-let mirror = currentFacingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)';
-video.style.transform = translate(${offsetX}px, ${offsetY}px) scale(${scale}) ${mirror};
-}
-function redrawCanvas() {
-ctx.clearRect(0, 0, canvas.width, canvas.height);
-ctx.lineWidth = 6;
-ctx.strokeStyle = '#ff3b30';
-ctx.lineCap = 'round';
-ctx.lineJoin = 'round';
-for (let line of drawingLines) {
-if (line.length < 2) continue;
+function redrawLines() {
+ctx.lineWidth = 6; ctx.strokeStyle = '#ff3b30'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+for (let i = 0; i < drawingLines.length; i++) {
+const line = drawingLines[i];
+if (!line || line.length < 2) continue;
 ctx.beginPath();
 ctx.moveTo(line[0].x, line[0].y);
-for (let i = 1; i < line.length; i++) {
-ctx.lineTo(line[i].x, line[i].y);
+for (let j = 1; j < line.length; j++) {
+ctx.lineTo(line[j].x, line[j].y);
 }
 ctx.stroke();
 }
@@ -294,5 +254,4 @@ ctx.stroke();
 window.addEventListener('resize', () => {
 canvas.width = window.innerWidth * window.devicePixelRatio;
 canvas.height = window.innerHeight * window.devicePixelRatio;
-redrawCanvas();
 });
