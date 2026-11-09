@@ -1,10 +1,9 @@
-```json
 {
-  "name": "Video Delay Loop",
-  "short_name": "VideoDelay",
+  "name": "Archery Delay",
+  "short_name": "ArcheryDelay",
   "start_url": "index.html",
   "display": "standalone",
   "background_color": "#000000",
-  "theme_color": "#ff3b30",
-  "orientation": "any"
+  "theme_color": "#ff9500",
+  "orientation": "portrait"
 }
