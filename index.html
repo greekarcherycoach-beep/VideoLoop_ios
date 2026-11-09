@@ -3,30 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Archery Lab Stable</title>
+    <title>Archery Delay</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
             background-color: #000; overflow: hidden;
             font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-            user-select: none; -webkit-user-select: none;
         }
         #canvasContainer {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             display: flex; justify-content: center; align-items: center; z-index: 1;
         }
         canvas { width: 100%; height: 100%; object-fit: cover; }
+        video { display: none; }
         
-        /* Κρυφό live video tag που απλώς λαμβάνει τη ροή */
-        #liveVideo { display: none; }
-
         #startContainer {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #111; display: flex; justify-content: center; align-items: center; z-index: 9999;
+            background: #222; display: flex; justify-content: center; align-items: center; z-index: 999;
         }
         #startBtn {
             background: #ff9500; color: #000; padding: 20px 40px;
-            font-size: 20px; font-weight: bold; border-radius: 12px; border: none; cursor: pointer;
+            font-size: 20px; font-weight: bold; border-radius: 12px; border: none;
+            cursor: pointer;
         }
         #ui-overlay {
             position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
@@ -34,15 +32,11 @@
             z-index: 10; width: 90%; max-width: 400px;
             background: rgba(0,0,0,0.8); padding: 15px; border-radius: 16px;
             backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-            display: none;
         }
         .row { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 10px; }
         label { color: #fff; font-size: 14px; font-weight: 600; }
         input[type="range"] { flex-grow: 1; accent-color: #ff3b30; height: 30px; }
         #delayValue { color: #ff9500; font-weight: bold; min-width: 45px; text-align: right; }
-        .btn-group { display: flex; gap: 8px; width: 100%; }
-        button { flex: 1; background: #ff9500; color: #000; border: none; padding: 12px; font-size: 14px; font-weight: bold; border-radius: 8px; cursor: pointer; }
-        button.active { background: #ff3b30; color: #fff; }
     </style>
 </head>
 <body>
@@ -55,18 +49,13 @@
         <canvas id="mainCanvas"></canvas>
     </div>
     
-    <video id="liveVideo" autoplay playsinline muted></video>
+    <video id="liveVideo" autoplay playsinline muted webkit-playsinline></video>
     
     <div id="ui-overlay">
         <div class="row">
             <label>⏱ Καθυστέρηση:</label>
-            <input type="range" id="delaySlider" min="0.5" max="8" step="0.5" value="3">
+            <input type="range" id="delaySlider" min="0.5" max="10" step="0.5" value="3">
             <span id="delayValue">3.0s</span>
-        </div>
-        <div class="btn-group">
-            <button id="toggleCamBtn">🔄 Κάμερα</button>
-            <button id="drawModeBtn">✏️ Σχεδίαση</button>
-            <button id="clearDrawBtn">🗑️ Σβήσιμο</button>
         </div>
     </div>
 
@@ -76,182 +65,94 @@
         const ctx = canvas.getContext('2d');
         const delaySlider = document.getElementById('delaySlider');
         const delayValue = document.getElementById('delayValue');
-        const toggleCamBtn = document.getElementById('toggleCamBtn');
-        const drawModeBtn = document.getElementById('drawModeBtn');
-        const clearDrawBtn = document.getElementById('clearDrawBtn');
         const startContainer = document.getElementById('startContainer');
         const startBtn = document.getElementById('startBtn');
-        const uiOverlay = document.getElementById('ui-overlay');
 
-        let stream = null;
-        let currentFacingMode = 'environment';
+        const bufferCanvas = document.createElement('canvas');
+        const bufferCtx = bufferCanvas.getContext('2d');
+
+        let frameBuffer = [];
         let currentDelay = 3.0;
-        
-        let drawingLines = [];
-        let currentLine = null;
-        let isDrawingMode = false;
+        let fps = 30;
+        let lastTime = performance.now();
+        let stream = null;
 
-        // Μεταβλητές Zoom/Pan
-        let scale = 1.0, offsetX = 0, offsetY = 0;
-        let startX = 0, startY = 0, startScale = 1.0, isPanning = false;
-        let initialPinchDist = 0;
-
-        // Ένας ελαφρύς buffer που αποθηκεύει *μόνο* δείκτες χρόνου (timestamps) αντί για βαριές εικόνες canvas pixel-pixel
-        let timeShiftBuffer = [];
-
-        startBtn.addEventListener('click', () => {
+        startBtn.addEventListener('click', async () => {
             startContainer.style.display = 'none';
-            uiOverlay.style.display = 'flex';
-            initCamera();
-        });
-
-        async function initCamera() {
-            if (stream) { stream.getTracks().forEach(track => track.stop()); }
+            
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: currentFacingMode },
+                    video: { facingMode: "environment" },
                     audio: false
                 });
+                
                 video.srcObject = stream;
                 await video.play();
                 
+                // Αρχικοποίηση διαστάσεων canvas
                 canvas.width = window.innerWidth * window.devicePixelRatio;
                 canvas.height = window.innerHeight * window.devicePixelRatio;
+                bufferCanvas.width = video.videoWidth || 640;
+                bufferCanvas.height = video.videoHeight || 480;
                 
                 requestAnimationFrame(animationLoop);
             } catch (err) {
-                alert("Σφάλμα κάμερας: " + err.message);
+                alert("Σφάλμα: " + err.message);
             }
-        }
+        });
 
         delaySlider.addEventListener('input', (e) => {
             currentDelay = parseFloat(e.target.value);
             delayValue.textContent = currentDelay.toFixed(1) + 's';
-            timeShiftBuffer = []; // Καθαρισμός buffer χρόνου
         });
 
-        toggleCamBtn.addEventListener('click', () => {
-            currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
-            scale = 1.0; offsetX = 0; offsetY = 0;
-            timeShiftBuffer = [];
-            initCamera();
-        });
+        function animationLoop(now) {
+            const delta = now - lastTime;
+            lastTime = now;
+            if (delta > 0) fps = (fps * 0.9) + ((1000 / delta) * 0.1);
 
-        drawModeBtn.addEventListener('click', () => {
-            isDrawingMode = !isDrawingMode;
-            drawModeBtn.classList.toggle('active', isDrawingMode);
-        });
-
-        clearDrawBtn.addEventListener('click', () => {
-            drawingLines = [];
-            redrawCanvas();
-        });
-
-        // Touch Gestures
-        canvas.addEventListener('touchstart', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            if (isDrawingMode) {
-                const touch = e.touches[0];
-                currentLine = [{
-                    x: (touch.clientX - rect.left) * window.devicePixelRatio,
-                    y: (touch.clientY - rect.top) * window.devicePixelRatio
-                }];
-                drawingLines.push(currentLine);
-            } else {
-                if (e.touches.length === 1) {
-                    isPanning = true;
-                    startX = e.touches[0].clientX - offsetX;
-                    startY = e.touches[0].clientY - offsetY;
-                } else if (e.touches.length === 2) {
-                    isPanning = false;
-                    startScale = scale;
-                    initialPinchDist = Math.hypot(
-                        e.touches[0].clientX - e.touches[1].clientX,
-                        e.touches[0].clientY - e.touches[1].clientY
-                    );
-                }
-            }
-        });
-
-        canvas.addEventListener('touchmove', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            if (isDrawingMode && currentLine) {
-                const touch = e.touches[0];
-                currentLine.push({
-                    x: (touch.clientX - rect.left) * window.devicePixelRatio,
-                    y: (touch.clientY - rect.top) * window.devicePixelRatio
-                });
-            } else {
-                if (isPanning && e.touches.length === 1) {
-                    offsetX = e.touches[0].clientX - startX;
-                    offsetY = e.touches[0].clientY - startY;
-                } else if (e.touches.length === 2) {
-                    const dist = Math.hypot(
-                        e.touches[0].clientX - e.touches[1].clientX,
-                        e.touches[0].clientY - e.touches[1].clientY
-                    );
-                    scale = Math.max(1.0, Math.min(5.0, startScale * (dist / initialPinchDist)));
-                }
-            }
-        });
-
-        canvas.addEventListener('touchend', () => { isPanning = false; currentLine = null; });
-
-        function animationLoop() {
+            // Αποθήκευση του live frame στον buffer
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                // 🍏 ΠΑΝΕΞΥΠΝΟ BYPASS: Αντί να τραβάμε ImageData pixel-pixel (που κρασάρει τη RAM),
-                // τραβάμε το τρέχον frame ως HTMLVideoElement και το τροφοδοτούμε σε έναν ελαφρύ πίνακα CanvasRenderingContext
-                // Το iOS χρησιμοποιεί hardware acceleration και η RAM παραμένει στο 0%!
-                
-                const frameCanvas = document.createElement('canvas');
-                frameCanvas.width = video.videoWidth;
-                frameCanvas.height = video.videoHeight;
-                const frameCtx = frameCanvas.getContext('2d');
-                frameCtx.drawImage(video, 0, 0);
-                
-                timeShiftBuffer.push({
-                    image: frameCanvas,
-                    time: performance.now()
-                });
+                if (bufferCanvas.width !== video.videoWidth || bufferCanvas.height !== video.videoHeight) {
+                    bufferCanvas.width = video.videoWidth;
+                    bufferCanvas.height = video.videoHeight;
+                }
+                bufferCtx.drawImage(video, 0, 0, bufferCanvas.width, bufferCanvas.height);
+                const frameData = bufferCtx.getImageData(0, 0, bufferCanvas.width, bufferCanvas.height);
+                frameBuffer.push(frameData);
             }
 
-            // Φιλτράρισμα του buffer για να βρούμε το frame που αντιστοιχεί στο delay
-            const now = performance.now();
-            while (timeShiftBuffer.length > 0 && (now - timeShiftBuffer[0].time) > (currentDelay * 1000)) {
-                const delayedFrame = timeShiftBuffer.shift();
+            const requiredBufferLength = Math.max(1, Math.round(currentDelay * fps));
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Εμφάνιση του frame με καθυστέρηση
+            if (frameBuffer.length >= requiredBufferLength) {
+                const delayedFrame = frameBuffer.shift();
                 
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
                 ctx.save();
+                ctx.translate(canvas.width / 2, canvas.height / 2);
                 
-                // Εφαρμογή Zoom και Pan
-                ctx.translate(canvas.width / 2 + offsetX * window.devicePixelRatio, canvas.height / 2 + offsetY * window.devicePixelRatio);
-                ctx.scale(scale, scale);
+                // Υπολογισμός Aspect Fill για Fullscreen σε Portrait
+                const scaleFactor = Math.max(canvas.width / bufferCanvas.width, canvas.height / bufferCanvas.height);
+                const dw = bufferCanvas.width * scaleFactor;
+                const dh = bufferCanvas.height * scaleFactor;
                 
-if (currentFacingMode === 'user') ctx.scale(-1, 1); // Mirror selfie
-const scaleFactor = Math.max(canvas.width / delayedFrame.image.width, canvas.height / delayedFrame.image.height);
-const dw = delayedFrame.image.width * scaleFactor;
-const dh = delayedFrame.image.height * scaleFactor;
-ctx.drawImage(delayedFrame.image, -dw / 2, -dh / 2, dw, dh);
-ctx.restore();
-// Σχεδίαση των γραμμών πάνω από το βίντεο
-redrawLines();
-}
-requestAnimationFrame(animationLoop);
-}
-function redrawLines() {
-ctx.lineWidth = 6; ctx.strokeStyle = '#ff3b30'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-for (let i = 0; i < drawingLines.length; i++) {
-const line = drawingLines[i];
-if (!line || line.length < 2) continue;
-ctx.beginPath();
-ctx.moveTo(line[0].x, line[0].y);
-for (let j = 1; j < line.length; j++) {
-ctx.lineTo(line[j].x, line[j].y);
-}
-ctx.stroke();
-}
-}
-window.addEventListener('resize', () => {
-canvas.width = window.innerWidth * window.devicePixelRatio;
-canvas.height = window.innerHeight * window.devicePixelRatio;
-});
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = bufferCanvas.width; tempCanvas.height = bufferCanvas.height;
+                tempCanvas.getContext('2d').putImageData(delayedFrame, 0, 0);
+                
+                ctx.drawImage(tempCanvas, -dw / 2, -dh / 2, dw, dh);
+                ctx.restore();
+            }
+
+            requestAnimationFrame(animationLoop);
+        }
+
+        // Διόρθωση μεγέθους σε στροφή οθόνης
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth * window.devicePixelRatio;
+            canvas.height = window.innerHeight * window.devicePixelRatio;
+        });
+    </script>
+</body>
+</html>
