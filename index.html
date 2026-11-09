@@ -3,102 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Archery Lab Clean</title>
+    <title>Archery Simple Test</title>
     <style>
-        body, html {
-            margin: 0; padding: 0; width: 100%; height: 100%;
-            background-color: #000; overflow: hidden;
-            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-        }
-        /* Εμφανίζουμε το βίντεο native για να μην τρώει RAM */
-        video {
-            width: 100%; height: 100%; object-fit: cover;
-            position: absolute; top: 0; left: 0; z-index: 1;
-        }
-        #startContainer {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #111; display: flex; justify-content: center; align-items: center; z-index: 9999;
-        }
-        #startBtn {
-            background: #ff9500; color: #000; padding: 20px 40px;
-            font-size: 20px; font-weight: bold; border-radius: 12px; border: none;
-            cursor: pointer;
-        }
-        #ui-overlay {
-            position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
-            z-index: 10; width: 90%; max-width: 400px;
-            background: rgba(0,0,0,0.8); padding: 15px; border-radius: 16px;
-            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-            display: none;
-        }
-        button {
-            width: 100%; background: #ff9500; color: #000; border: none; 
-            padding: 15px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer;
-        }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #000; overflow: hidden; }
+        video { width: 100%; height: 100%; object-fit: cover; position: absolute; top: 0; left: 0; z-index: 1; }
+        #btnContainer { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #111; display: flex; justify-content: center; align-items: center; z-index: 999; }
+        #clickBtn { background: #ff9500; color: #000; padding: 25px 50px; font-size: 22px; font-weight: bold; border-radius: 16px; border: none; }
     </style>
 </head>
 <body>
 
-    <div id="startContainer">
-        <button id="startBtn">📷 ΕΝΑΡΞΗ ΚΑΜΕΡΑΣ</button>
+    <div id="btnContainer">
+        <button id="clickBtn">📷 ΑΝΟΙΓΜΑ ΚΑΜΕΡΑΣ</button>
     </div>
 
-    <!-- Native iOS video container -->
-    <video id="liveVideo" autoplay playsinline muted webkit-playsinline></video>
-    
-    <div id="ui-overlay">
-        <button id="toggleCamBtn">🔄 ΑΛΛΑΓΗ ΚΑΜΕΡΑΣ (ΕΜΠΡΟΣ/ΠΙΣΩ)</button>
-    </div>
+    <video id="myVideo" autoplay playsinline muted webkit-playsinline></video>
 
     <script>
-        const video = document.getElementById('liveVideo');
-        const startContainer = document.getElementById('startContainer');
-        const startBtn = document.getElementById('startBtn');
-        const uiOverlay = document.getElementById('ui-overlay');
-        const toggleCamBtn = document.getElementById('toggleCamBtn');
+        const video = document.getElementById('myVideo');
+        const btnContainer = document.getElementById('btnContainer');
+        const clickBtn = document.getElementById('clickBtn');
 
-        let stream = null;
-        let currentFacingMode = 'environment';
-
-        startBtn.addEventListener('click', () => {
-            startContainer.style.display = 'none';
-            uiOverlay.style.display = 'block';
-            initCamera();
-        });
-
-        async function initCamera() {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-            }
-            
+        clickBtn.addEventListener('click', async () => {
+            btnContainer.style.display = 'none';
             try {
-                // Ζητάμε την κάμερα με τον πιο απλό και ελαφρύ native τρόπο
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: { 
-                        facingMode: currentFacingMode,
-                        width: { ideal: 640 },
-                        height: { ideal: 480 }
-                    },
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment" },
                     audio: false
                 });
-                
                 video.srcObject = stream;
-                // Αναγκάζουμε το iOS να παίξει το stream
                 await video.play();
             } catch (err) {
-                alert("Σφάλμα συστήματος: " + err.message);
+                alert("iOS Error Details: " + err.name + " - " + err.message);
             }
-        }
-
-        toggleCamBtn.addEventListener('click', () => {
-            currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
-            // Εφαρμογή εφέ καθρέφτη (mirror) μόνο για την μπροστινή κάμερα
-            if (currentFacingMode === 'user') {
-                video.style.transform = 'scaleX(-1)';
-            } else {
-                video.style.transform = 'scaleX(1)';
-            }
-            initCamera();
         });
     </script>
 </body>
