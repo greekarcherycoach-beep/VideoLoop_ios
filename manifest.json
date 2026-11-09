@@ -1,10 +1,10 @@
 {
-  "name": "Video Delay Loop",
-  "short_name": "VideoDelay",
+  "name": "Archery Lab - Video Delay",
+  "short_name": "ArcheryLab",
   "start_url": "index.html",
   "display": "standalone",
   "background_color": "#111111",
-  "theme_color": "#ff3b30",
+  "theme_color": "#ffcc00",
   "orientation": "portrait",
   "icons": [
     {
