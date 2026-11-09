@@ -5,11 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Archery Delay</title>
     
-    <!-- 🍏 Σύνδεση με το Manifest και Apple Web App Tags για Fullscreen PWA -->
+    <!-- Σύνδεση με το manifest.json για PWA standalone ενεργοποίηση -->
     <link rel="manifest" href="manifest.json">
+    
+    <!-- 🍏 100% Fullscreen Tags για iOS (Εξαφάνιση της μπάρας διευθύνσεων) -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="ArcheryDelay">
+    
+    <!-- Σύνδεση με το εικονίδιο -->
     <link rel="apple-touch-icon" href="icon-192.png">
 
     <style>
@@ -68,16 +72,9 @@
     </div>
 
     <script>
-        // 🔄 Δημιουργία ενός inline "Safe-Mode" Service Worker για να μην κρασάρει η κάμερα στο iOS Fullscreen sandbox
+        // Σύνδεση με το κανονικό, εξωτερικό αρχείο sw.js
         if ('serviceWorker' in navigator) {
-            const swCode = `
-                self.addEventListener('fetch', (e) => {
-                    e.respondWith(fetch(e.request));
-                });
-            `;
-            const blob = new Blob([swCode], { type: 'application/javascript' });
-            const swUrl = URL.createObjectURL(blob);
-            navigator.serviceWorker.register(swUrl).catch(err => console.log(err));
+            navigator.serviceWorker.register('sw.js').catch(err => console.log(err));
         }
 
         const video = document.getElementById('liveVideo');
@@ -97,19 +94,14 @@
         let lastTime = performance.now();
         let stream = null;
 
-        // 🍏 iOS Bypass: Χρήση touchend για άμεσο ξεκλείδωμα του hardware στην αρχική οθόνη
-        startBtn.addEventListener('touchend', (e) => {
-            e.preventDefault();
+        function handleStart(e) {
+            if(e) e.preventDefault();
             startContainer.style.display = 'none';
             initCamera();
-        });
+        }
 
-        startBtn.addEventListener('click', () => {
-            if(startContainer.style.display !== 'none') {
-                startContainer.style.display = 'none';
-                initCamera();
-            }
-        });
+        startBtn.addEventListener('touchend', handleStart);
+        startBtn.addEventListener('click', handleStart);
 
         async function initCamera() {
             if (stream) { stream.getTracks().forEach(track => track.stop()); }
