@@ -27,7 +27,16 @@
             cursor: pointer;
         }
         
-        /* Διορθωμένο overlay: Αυξήσαμε το μέγεθος (max-height) και το padding */
+        /* 👁️ Νέο κουμπί για Απόκρυψη/Εμφάνιση μενού στην πάνω γωνία */
+        #menuToggleBtn {
+            position: absolute; top: 40px; right: 20px;
+            z-index: 20; background: rgba(0,0,0,0.6); color: #fff;
+            border: 1px solid rgba(255,255,255,0.2); width: 45px; height: 45px;
+            font-size: 20px; border-radius: 50%; cursor: pointer;
+            display: none; align-items: center; justify-content: center;
+            backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+        }
+        
         #ui-overlay {
             position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
             display: flex; flex-direction: column; align-items: center; gap: 16px;
@@ -35,21 +44,27 @@
             background: rgba(0,0,0,0.85); padding: 20px; border-radius: 16px;
             backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
             box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            transition: opacity 0.3s ease, transform 0.3s ease; /* Ομαλό animation */
         }
+        
+        /* Κλάση CSS που κρύβει το μενού */
+        #ui-overlay.hidden {
+            opacity: 0;
+            transform: translate(-50%, 30px);
+            pointer-events: none; /* Απενεργοποιεί τα κλικ όταν είναι κρυφό */
+        }
+
         .row { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 10px; }
         label { color: #fff; font-size: 14px; font-weight: 600; }
         input[type="range"] { flex-grow: 1; accent-color: #ff3b30; height: 30px; }
         #delayValue { color: #ff9500; font-weight: bold; min-width: 45px; text-align: right; }
         
-        /* Καθαρό και ευδιάκριτο στυλ για το κουμπί εναλλαγής */
         #toggleCamBtn {
             width: 100%; background: #ff9500; color: #000; border: none; 
             padding: 12px; font-size: 15px; font-weight: bold; border-radius: 8px; 
             cursor: pointer; display: block;
         }
-        #toggleCamBtn:active {
-            background: #e08400;
-        }
+        #toggleCamBtn:active { background: #e08400; }
     </style>
 </head>
 <body>
@@ -57,6 +72,9 @@
     <div id="startContainer">
         <button id="startBtn">📷 ΕΝΑΡΞΗ ΚΑΜΕΡΑΣ</button>
     </div>
+
+    <!-- 👁️ Το κουμπί απόκρυψης -->
+    <button id="menuToggleBtn">👁️</button>
 
     <div id="canvasContainer">
         <canvas id="mainCanvas"></canvas>
@@ -70,7 +88,6 @@
             <input type="range" id="delaySlider" min="0.5" max="10" step="0.5" value="3">
             <span id="delayValue">3.0s</span>
         </div>
-        <!-- Το κουμπί τοποθετήθηκε ξεκάθαρα εδώ -->
         <button id="toggleCamBtn">🔄 ΕΝΑΛΛΑΓΗ ΚΑΜΕΡΑΣ</button>
     </div>
 
@@ -83,6 +100,8 @@
         const startContainer = document.getElementById('startContainer');
         const startBtn = document.getElementById('startBtn');
         const toggleCamBtn = document.getElementById('toggleCamBtn');
+        const menuToggleBtn = document.getElementById('menuToggleBtn'); // 👁️ Νέο element
+        const uiOverlay = document.getElementById('ui-overlay');
 
         const bufferCanvas = document.createElement('canvas');
         const bufferCtx = bufferCanvas.getContext('2d');
@@ -95,9 +114,7 @@
         let currentFacingMode = 'environment';
 
         async function initCamera() {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-            }
+            if (stream) { stream.getTracks().forEach(track => track.stop()); }
             frameBuffer = [];
             
             try {
@@ -120,8 +137,14 @@
 
         startBtn.addEventListener('click', async () => {
             startContainer.style.display = 'none';
+            menuToggleBtn.style.display = 'flex'; // Εμφάνιση του ματιού μόλις ξεκινήσει η κάμερα
             await initCamera();
             requestAnimationFrame(animationLoop);
+        });
+
+        // 👁️ Λειτουργία απόκρυψης / εμφάνισης μενού
+        menuToggleBtn.addEventListener('click', () => {
+            uiOverlay.classList.toggle('hidden');
         });
 
         toggleCamBtn.addEventListener('click', async () => {
