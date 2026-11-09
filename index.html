@@ -2,14 +2,8 @@
 <html lang="el">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Archery Delay</title>
-    
-    <link rel="manifest" href="manifest.json">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="ArcheryDelay">
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Archery Lab Canvas</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
@@ -22,11 +16,11 @@
             display: flex; justify-content: center; align-items: center; z-index: 1;
         }
         canvas { width: 100%; height: 100%; object-fit: cover; }
-        video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+        video { display: none; }
         
         #startContainer {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #222; display: flex; justify-content: center; align-items: center; z-index: 9999;
+            background: #111; display: flex; justify-content: center; align-items: center; z-index: 9999;
         }
         #startBtn {
             background: #ff9500; color: #000; padding: 20px 40px;
@@ -57,7 +51,7 @@
 <body>
 
     <div id="startContainer">
-        <button id="startBtn">📷 ΕΝΑΡΞΗ KAMEΡΑΣ</button>
+        <button id="startBtn">📷 ΕΝΑΡΞΗ ΚΑΜΕΡΑΣ</button>
     </div>
 
     <div id="canvasContainer">
@@ -65,7 +59,7 @@
     </div>
     
     <div id="zoomBadge">Zoom: 1.0x</div>
-    <video id="liveVideo" autoplay playsinline muted webkit-playsinline></video>
+    <video id="liveVideo" autoplay playsinline muted></video>
     
     <div id="ui-overlay">
         <div class="row">
@@ -81,10 +75,6 @@
     </div>
 
     <script>
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js').catch(err => console.log(err));
-        }
-
         const video = document.getElementById('liveVideo');
         const canvas = document.getElementById('mainCanvas');
         const ctx = canvas.getContext('2d');
@@ -116,18 +106,10 @@
         let stream = null;
         let animationFrameId = null;
 
-        // 🍏 iOS standalone mode fix: Ακούμε και για click και για touchend με stopPropagation
-        function handleStart(e) {
-            if(e) {
-                e.preventDefault();
-                e.stopPropagation();
-            }
+        startBtn.addEventListener('click', () => {
             startContainer.style.display = 'none';
             initCamera();
-        }
-
-        startBtn.addEventListener('touchend', handleStart);
-        startBtn.addEventListener('click', handleStart);
+        });
 
         async function initCamera() {
             if (stream) { stream.getTracks().forEach(track => track.stop()); }
@@ -170,6 +152,7 @@
 
         clearDrawBtn.addEventListener('click', () => { drawingLines = []; });
 
+        // Gestures
         canvas.addEventListener('touchstart', (e) => {
             const rect = canvas.getBoundingClientRect();
             if (isDrawingMode) {
@@ -227,19 +210,22 @@
             if (delta > 0) fps = (fps * 0.9) + ((1000 / delta) * 0.1);
 
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
-if (bufferCanvas.width !== video.videoWidth || bufferCanvas.height !== video.videoHeight) {
-bufferCanvas.width = video.videoWidth;
-bufferCanvas.height = video.videoHeight;
-}
-bufferCtx.drawImage(video, 0, 0, bufferCanvas.width, bufferCanvas.height);
-const frameData = bufferCtx.getImageData(0, 0, bufferCanvas.width, bufferCanvas.height);
-frameBuffer.push(frameData);
-}
-const requiredBufferLength = Math.max(1, Math.round(currentDelay * fps));
-ctx.clearRect(0, 0, canvas.width, canvas.height);
-if (frameBuffer.length >= requiredBufferLength) {
-const delayedFrame = frameBuffer.shift();
-ctx.save();
+                if (bufferCanvas.width !== video.videoWidth || bufferCanvas.height !== video.videoHeight) {
+                    bufferCanvas.width = video.videoWidth;
+                    bufferCanvas.height = video.videoHeight;
+                }
+                bufferCtx.drawImage(video, 0, 0, bufferCanvas.width, bufferCanvas.height);
+                const frameData = bufferCtx.getImageData(0, 0, bufferCanvas.width, bufferCanvas.height);
+                frameBuffer.push(frameData);
+            }
+
+            const requiredBufferLength = Math.max(1, Math.round(currentDelay * fps));
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (frameBuffer.length >= requiredBufferLength) {
+                const delayedFrame = frameBuffer.shift();
+                
+                ctx.save();
 ctx.translate(canvas.width / 2 + offsetX, canvas.height / 2 + offsetY);
 ctx.scale(scale, scale);
 if (currentFacingMode === 'user') ctx.scale(-1, 1);
@@ -252,7 +238,7 @@ tempCanvas.getContext('2d').putImageData(delayedFrame, 0, 0);
 ctx.drawImage(tempCanvas, -dw / 2, -dh / 2, dw, dh);
 ctx.restore();
 }
-// 🌟 100% Διορθωμένο loop σχεδίασης (line[0].x αντί για line.x)
+// Διορθωμένη σχεδίαση
 ctx.lineWidth = 6; ctx.strokeStyle = '#ff3b30'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
 for (let i = 0; i < drawingLines.length; i++) {
 const line = drawingLines[i];
