@@ -23,7 +23,7 @@
             display: flex; justify-content: center; align-items: center; z-index: 1;
         }
         canvas { width: 100%; height: 100%; object-fit: cover; }
-        video { display: none; }
+        video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
         
         #startContainer {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -82,8 +82,9 @@
     </div>
 
     <script>
+        // Απλοποιημένο registration χωρίς παραμέτρους cache που μπερδεύουν το iOS PWA
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js?v=5').catch(err => console.log(err));
+            navigator.serviceWorker.register('sw.js').catch(err => console.log(err));
         }
 
         const video = document.getElementById('liveVideo');
@@ -117,18 +118,19 @@
         let stream = null;
         let animationFrameId = null;
 
+        // Ενοποιημένος handler εκκίνησης
         function handleStart(e) {
             if(e) e.preventDefault();
             startContainer.style.display = 'none';
             initCamera();
         }
 
-        startBtn.addEventListener('touchend', handleStart);
         startBtn.addEventListener('click', handleStart);
 
         async function initCamera() {
             if (stream) { stream.getTracks().forEach(track => track.stop()); }
             try {
+                // native clean request
                 stream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: currentFacingMode },
                     audio: false
@@ -167,6 +169,7 @@
 
         clearDrawBtn.addEventListener('click', () => { drawingLines = []; });
 
+        // Touch Gestures
         canvas.addEventListener('touchstart', (e) => {
             const rect = canvas.getBoundingClientRect();
             if (isDrawingMode) {
@@ -224,8 +227,8 @@
             if (delta > 0) fps = (fps * 0.9) + ((1000 / delta) * 0.1);
 
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
-                if (bufferCanvas.width !== video.videoWidth || bufferCanvas.height !== video.videoHeight) {
-                    bufferCanvas.width = video.videoWidth;
+if (bufferCanvas.width !== video.videoWidth || bufferCanvas.height !== video.videoHeight) {
+bufferCanvas.width = video.videoWidth;
 bufferCanvas.height = video.videoHeight;
 }
 bufferCtx.drawImage(video, 0, 0, bufferCanvas.width, bufferCanvas.height);
@@ -249,13 +252,13 @@ tempCanvas.getContext('2d').putImageData(delayedFrame, 0, 0);
 ctx.drawImage(tempCanvas, -dw / 2, -dh / 2, dw, dh);
 ctx.restore();
 }
-// Διορθωμένο loop σχεδίασης
+// Διορθωμένο και σταθερό loop σχεδίασης γραμμών
 ctx.lineWidth = 6; ctx.strokeStyle = '#ff3b30'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
 for (let i = 0; i < drawingLines.length; i++) {
 const line = drawingLines[i];
 if (!line || line.length < 2) continue;
 ctx.beginPath();
-ctx.moveTo(line[0].x, line[0].y); // <-- Διορθώθηκε
+ctx.moveTo(line[0].x, line[0].y);
 for (let j = 1; j < line.length; j++) {
 ctx.lineTo(line[j].x, line[j].y);
 }
@@ -266,4 +269,4 @@ requestAnimationFrame(animationLoop);
 window.addEventListener('resize', () => {
 canvas.width = window.innerWidth * window.devicePixelRatio;
 canvas.height = window.innerHeight * window.devicePixelRatio;
-})
+});
