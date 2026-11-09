@@ -5,15 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Archery Lab Fullscreen</title>
     
-    <!-- Σύνδεση με το manifest για PWA λειτουργία -->
     <link rel="manifest" href="manifest.json">
     
-    <!-- 🍏 Ειδικά Apple Tags για εξαφάνιση της μπάρας διευθύνσεων (Full Screen PWA) -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="ArcheryLab">
     
-    <!-- 🍏 Ρύθμιση για να εμφανίζεται το εικονίδιο κατά την προσθήκη στην οθόνη αφετηρίας -->
     <link rel="apple-touch-icon" href="icon-192.png">
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
     <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png">
@@ -29,7 +26,10 @@
             display: flex; justify-content: center; align-items: center; z-index: 1;
         }
         canvas { width: 100%; height: 100%; object-fit: cover; }
-        video { display: none; }
+        
+        /* Αναγκάζουμε το βίντεο να είναι ενεργό στο DOM αλλά αόρατο, 
+           καθώς το display:none μερικές φορές απενεργοποιεί το stream στο iOS PWA mode */
+        video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
         
         #startContainer {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -66,7 +66,8 @@
         <canvas id="mainCanvas"></canvas>
     </div>
     
-    <video id="liveVideo" autoplay playsinline muted></video>
+    <!-- Προσθήκη webkit-playsinline και ρητών attributes για PWA bypass -->
+    <video id="liveVideo" autoplay playsinline muted webkit-playsinline></video>
     
     <div id="ui-overlay">
         <div class="row">
@@ -82,7 +83,6 @@
     </div>
 
     <script>
-        // 🔄 Ενεργοποιούμε ξανά κανονικά τον Service Worker για το PWA validation
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js').catch(err => console.log(err));
         }
@@ -110,9 +110,19 @@
         
         let fps = 30, lastTime = performance.now(), stream = null, animationFrameId = null;
 
-        startBtn.addEventListener('click', () => {
+        // Χρήση touchend για πιο άμεση απόκριση στο iOS Fullscreen mode
+        startBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
             startContainer.style.display = 'none';
             initCamera();
+        });
+
+        // Fallback για click
+        startBtn.addEventListener('click', () => {
+            if(startContainer.style.display !== 'none') {
+                startContainer.style.display = 'none';
+                initCamera();
+            }
         });
 
         async function initCamera() {
@@ -120,7 +130,11 @@
             
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: currentFacingMode },
+                    video: { 
+                        facingMode: currentFacingMode,
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    },
                     audio: false
                 });
                 video.srcObject = stream;
@@ -132,9 +146,10 @@
                 bufferCanvas.width = video.videoWidth || 640;
                 bufferCanvas.height = video.videoHeight || 480;
                 
+                if (animationFrameId) cancelAnimationFrame(animationFrameId);
                 animationFrameId = requestAnimationFrame(animationLoop);
             } catch (err) {
-                alert("Σφάλμα iOS: " + err.name + " - " + err.message);
+                alert("Σφάλμα κάμερας PWA: " + err.message);
             }
         }
 
@@ -208,17 +223,14 @@
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = bufferCanvas.width; tempCanvas.height = bufferCanvas.height;
                 tempCanvas.getContext('2d').putImageData(delayedFrame, 0, 0);
-                
-                ctx.drawImage(tempCanvas, -dw / 2, -dh / 2, dw, dh);
-                ctx.restore();
-            }
-
-            ctx.lineWidth = 6; ctx.strokeStyle = '#ff3b30'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-            for (let line of drawingLines) {
-                if (line.length < 2) continue;
-                ctx.beginPath(); ctx.moveTo(line[line.length-1].x, line[line.length-1].y);
-                ctx.beginPath(); ctx.moveTo(line[0].x, line[0].y);
-                for (let i = 1; i < line.length; i++) ctx.lineTo(line[i].x, line[i].y);
+ctx.drawImage(tempCanvas, -dw / 2, -dh / 2, dw, dh);
+ctx.restore();
+}
+ctx.lineWidth = 6; ctx.strokeStyle = '#ff3b30'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+for (let line of drawingLines) {
+if (line.length < 2) continue;
+ctx.beginPath(); ctx.moveTo(line[0].x, line[0].y);
+for (let i = 1; i < line.length; i++) ctx.lineTo(line[i].x, line[i].y);
 ctx.stroke();
 }
 animationFrameId = requestAnimationFrame(animationLoop);
