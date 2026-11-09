@@ -12,8 +12,6 @@
     <meta name="apple-mobile-web-app-title" content="ArcheryLab">
     
     <link rel="apple-touch-icon" href="icon-192.png">
-    <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
-    <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png">
 
     <style>
         body, html {
@@ -26,9 +24,6 @@
             display: flex; justify-content: center; align-items: center; z-index: 1;
         }
         canvas { width: 100%; height: 100%; object-fit: cover; }
-        
-        /* Αναγκάζουμε το βίντεο να είναι ενεργό στο DOM αλλά αόρατο, 
-           καθώς το display:none μερικές φορές απενεργοποιεί το stream στο iOS PWA mode */
         video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
         
         #startContainer {
@@ -66,7 +61,6 @@
         <canvas id="mainCanvas"></canvas>
     </div>
     
-    <!-- Προσθήκη webkit-playsinline και ρητών attributes για PWA bypass -->
     <video id="liveVideo" autoplay playsinline muted webkit-playsinline></video>
     
     <div id="ui-overlay">
@@ -84,7 +78,7 @@
 
     <script>
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js').catch(err => console.log(err));
+            navigator.serviceWorker.register('./sw.js').catch(err => console.log(err));
         }
 
         const video = document.getElementById('liveVideo');
@@ -110,31 +104,22 @@
         
         let fps = 30, lastTime = performance.now(), stream = null, animationFrameId = null;
 
-        // Χρήση touchend για πιο άμεση απόκριση στο iOS Fullscreen mode
-        startBtn.addEventListener('touchend', (e) => {
-            e.preventDefault();
+        // Click & Touch κοινός handler για την εκκίνηση
+        function handleStart(e) {
+            if(e) e.preventDefault();
             startContainer.style.display = 'none';
             initCamera();
-        });
+        }
 
-        // Fallback για click
-        startBtn.addEventListener('click', () => {
-            if(startContainer.style.display !== 'none') {
-                startContainer.style.display = 'none';
-                initCamera();
-            }
-        });
+        startBtn.addEventListener('touchstart', handleStart);
+        startBtn.addEventListener('click', handleStart);
 
         async function initCamera() {
             if (stream) { stream.getTracks().forEach(track => track.stop()); }
             
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: { 
-                        facingMode: currentFacingMode,
-                        width: { ideal: 640 },
-                        height: { ideal: 480 }
-                    },
+                    video: { facingMode: currentFacingMode },
                     audio: false
                 });
                 video.srcObject = stream;
@@ -170,12 +155,14 @@
 
         clearDrawBtn.addEventListener('click', () => { drawingLines = []; });
 
+        // Διορθωμένο Touch Handling για τη σχεδίαση χωρίς σφάλματα
         canvas.addEventListener('touchstart', (e) => {
             if (!isDrawingMode) return;
             const rect = canvas.getBoundingClientRect();
+            const touch = e.touches[0];
             currentLine = [{
-                x: ((e.touches[0].clientX - rect.left) / rect.width) * canvas.width,
-                y: ((e.touches[0].clientY - rect.top) / rect.height) * canvas.height
+                x: ((touch.clientX - rect.left) / rect.width) * canvas.width,
+                y: ((touch.clientY - rect.top) / rect.height) * canvas.height
             }];
             drawingLines.push(currentLine);
         });
@@ -183,9 +170,10 @@
         canvas.addEventListener('touchmove', (e) => {
             if (!isDrawingMode || !currentLine) return;
             const rect = canvas.getBoundingClientRect();
+            const touch = e.touches[0];
             currentLine.push({
-                x: ((e.touches[0].clientX - rect.left) / rect.width) * canvas.width,
-                y: ((e.touches[0].clientY - rect.top) / rect.height) * canvas.height
+                x: ((touch.clientX - rect.left) / rect.width) * canvas.width,
+                y: ((touch.clientY - rect.top) / rect.height) * canvas.height
             });
         });
 
@@ -223,14 +211,24 @@
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = bufferCanvas.width; tempCanvas.height = bufferCanvas.height;
                 tempCanvas.getContext('2d').putImageData(delayedFrame, 0, 0);
-ctx.drawImage(tempCanvas, -dw / 2, -dh / 2, dw, dh);
-ctx.restore();
+                ctx.drawImage(tempCanvas, -dw / 2, -dh / 2, dw, dh);
+                ctx.restore();
+            }
+
+            // 100% Διορθωμένο και ασφαλές loop σχεδίασης γραμμών
+            ctx.lineWidth = 6; 
+            ctx.strokeStyle = '#ff3b30'; 
+            ctx.lineCap = 'round'; 
+            ctx.lineJoin = 'round';
+            
+            for (let i = 0; i < drawingLines.length; i++) {
+                const line = drawingLines[i];
+                if (!line || line.length < 2) continue;
+                ctx.beginPath(); 
+ctx.moveTo(line[0].x, line[0].y);
+for (let j = 1; j < line.length; j++) {
+ctx.lineTo(line[j].x, line[j].y);
 }
-ctx.lineWidth = 6; ctx.strokeStyle = '#ff3b30'; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-for (let line of drawingLines) {
-if (line.length < 2) continue;
-ctx.beginPath(); ctx.moveTo(line[0].x, line[0].y);
-for (let i = 1; i < line.length; i++) ctx.lineTo(line[i].x, line[i].y);
 ctx.stroke();
 }
 animationFrameId = requestAnimationFrame(animationLoop);
