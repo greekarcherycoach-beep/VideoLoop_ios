@@ -27,16 +27,6 @@
             cursor: pointer;
         }
         
-        /* 👁️ Νέο κουμπί για Απόκρυψη/Εμφάνιση μενού στην πάνω γωνία */
-        #menuToggleBtn {
-            position: absolute; top: 40px; right: 20px;
-            z-index: 20; background: rgba(0,0,0,0.6); color: #fff;
-            border: 1px solid rgba(255,255,255,0.2); width: 45px; height: 45px;
-            font-size: 20px; border-radius: 50%; cursor: pointer;
-            display: none; align-items: center; justify-content: center;
-            backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
-        }
-        
         #ui-overlay {
             position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
             display: flex; flex-direction: column; align-items: center; gap: 16px;
@@ -44,14 +34,14 @@
             background: rgba(0,0,0,0.85); padding: 20px; border-radius: 16px;
             backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
             box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-            transition: opacity 0.3s ease, transform 0.3s ease; /* Ομαλό animation */
+            transition: opacity 0.3s ease, transform 0.3s ease;
         }
         
-        /* Κλάση CSS που κρύβει το μενού */
+        /* Κλάση για την κρυφή κατάσταση του μενού */
         #ui-overlay.hidden {
             opacity: 0;
             transform: translate(-50%, 30px);
-            pointer-events: none; /* Απενεργοποιεί τα κλικ όταν είναι κρυφό */
+            pointer-events: none;
         }
 
         .row { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 10px; }
@@ -73,9 +63,7 @@
         <button id="startBtn">📷 ΕΝΑΡΞΗ ΚΑΜΕΡΑΣ</button>
     </div>
 
-    <!-- 👁️ Το κουμπί απόκρυψης -->
-    <button id="menuToggleBtn">👁️</button>
-
+    <!-- Το canvasContainer λειτουργεί πλέον ως ο διακόπτης για το μενού -->
     <div id="canvasContainer">
         <canvas id="mainCanvas"></canvas>
     </div>
@@ -94,13 +82,13 @@
     <script>
         const video = document.getElementById('liveVideo');
         const canvas = document.getElementById('mainCanvas');
+        const canvasContainer = document.getElementById('canvasContainer'); // Σύνδεση με το container
         const ctx = canvas.getContext('2d');
         const delaySlider = document.getElementById('delaySlider');
         const delayValue = document.getElementById('delayValue');
         const startContainer = document.getElementById('startContainer');
         const startBtn = document.getElementById('startBtn');
         const toggleCamBtn = document.getElementById('toggleCamBtn');
-        const menuToggleBtn = document.getElementById('menuToggleBtn'); // 👁️ Νέο element
         const uiOverlay = document.getElementById('ui-overlay');
 
         const bufferCanvas = document.createElement('canvas');
@@ -137,21 +125,25 @@
 
         startBtn.addEventListener('click', async () => {
             startContainer.style.display = 'none';
-            menuToggleBtn.style.display = 'flex'; // Εμφάνιση του ματιού μόλις ξεκινήσει η κάμερα
             await initCamera();
             requestAnimationFrame(animationLoop);
         });
 
-        // 👁️ Λειτουργία απόκρυψης / εμφάνισης μενού
-        menuToggleBtn.addEventListener('click', () => {
+        // 👁️ Πατώντας οπουδήποτε πάνω στο βίντεο, το μενού κρύβεται ή εμφανίζεται
+        canvasContainer.addEventListener('click', () => {
             uiOverlay.classList.toggle('hidden');
         });
 
-        toggleCamBtn.addEventListener('click', async () => {
+        toggleCamBtn.addEventListener('click', async (e) => {
+            e.stopPropagation(); // Εμποδίζει το κλείσιμο του μενού όταν πατάτε την αλλαγή κάμερας
             currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
             await initCamera();
         });
 
+        delaySlider.addEventListener('click', (e) => {
+            e.stopPropagation(); // Εμποδίζει το κλείσιμο του μενού όταν ρυθμίζετε τον χρόνο
+        });
+        
         delaySlider.addEventListener('input', (e) => {
             currentDelay = parseFloat(e.target.value);
             delayValue.textContent = currentDelay.toFixed(1) + 's';
